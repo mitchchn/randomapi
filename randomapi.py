@@ -279,6 +279,8 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
         """
         Verifies signed data with RANDOM.org.
         """
+        if not 'signature' in self._json_data['result']:
+            return None
 
         random = self._json_data['result']['random']
         signature = self._json_data['result']['signature']
