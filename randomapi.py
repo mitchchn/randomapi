@@ -10,12 +10,14 @@ Date: April 20, 2014
 Version: 0.1
 
 RANDOM.org API reference:
-https://api.random.org/json-rpc/1/
+- https://api.random.org/json-rpc/1/
 
 randomapi.py supports all basic and signed methods in Release 1
 of the RANDOM.ORG API. It respects delay requests from the server
 and has the ability to verify digitally-signed data.
 
+RPC code based on python-jsonrpc:
+- https://pypi.python.org/pypi/python-jsonrpc
 
 Example usage:
 
@@ -29,9 +31,9 @@ Example usage:
 import time
 import json
 import logging
+import urllib2
+import uuid
 from collections import OrderedDict
-
-import localrpc
 
 ###################### Constants #############################
 
@@ -60,6 +62,13 @@ VERIFY_SIGNATURE_METHOD = "verifySignature"
 ADVISORY_DELAY = "advisoryDelay"
 API_KEY = "apiKey"
 
+# JSON keys
+
+RESULT = "result"
+RANDOM = "random"
+AUTHENTICITY = "authenticity"
+SIGNATURE = "signature"
+
 # RANDOM.org blob formats
 
 FORMAT_BASE64 = "base64"
@@ -73,15 +82,6 @@ def valid_json_methods():
             SIGNED_STRING_METHOD, SIGNED_UUID_METHOD, VERIFY_SIGNATURE_METHOD]
 
 
-def json_to_ordered_dict(json_string):
-    """
-    Returns an ordered dictionary based from a JSON string
-
-    :param json_string: JSON-String
-    """
-    return json.loads(json_string, object_pairs_hook=OrderedDict)
-
-
 def parse_random(json_string):
     """
     Returns the randomly-generated data from a RANDOM.org JSON request
@@ -91,9 +91,12 @@ def parse_random(json_string):
 
     data = json_to_ordered_dict(json_string)
     random = []
-    if 'random' in data['result']:
-        random = data['result']['random']
+    if RANDOM in data[RESULT]:
+        random = data[RESULT][RANDOM]
     return random
+
+def json_to_ordered_dict(json_string):
+    return json.loads(json_string, object_pairs_hook=OrderedDict)
 
 
 def compose_api_call(json_method_name, *args, **kwargs):
@@ -114,7 +117,36 @@ def compose_api_call(json_method_name, *args, **kwargs):
         raise Exception(
             "'{}' is not a valid RANDOM.org JSON-RPC method".format(
                 json_method_name))
-    return localrpc.create_request_json(json_method_name, *args, **kwargs)
+    if kwargs:
+        params = kwargs
+        if args:
+            params["__args"] = args
+    else:
+        params = args
+
+    request_data = {
+        "method": unicode(json_method_name),
+        "id": unicode(uuid.uuid4()),
+        "jsonrpc": u"2.0",
+        "params": params
+    }
+    return json.dumps(request_data)
+
+
+def http_request(url, json_string):
+    """
+    Request data from server (POST)
+
+    :param json_string: JSON-String
+    """
+
+    request = urllib2.Request(url, data=json_string)
+    request.add_header("Content-Type", "application/json")
+    response = urllib2.urlopen(request)
+    response_string = response.read()
+    response.close()
+
+    return response_string
 
 
 class RandomJSONRPC:
@@ -131,13 +163,25 @@ class RandomJSONRPC:
 
         :param api_key: String representing a RANDOM.org JSON-RPC API key
         """
-
         self.api_key = api_key
-        self._json_data = {}
-        self._json_string = ""
-
         self._time_of_last_request = 0
         self._advisory_delay = 0
+
+    def _refresh(self):
+        self._json_data = {}
+        self._result = {}
+        self._random = []
+        self._signature = ""
+
+    def _populate(self):
+        if RESULT in self._json_data:
+            self._result = self._json_data[RESULT]
+        if ADVISORY_DELAY in self._result:
+            self._advisory_delay = float(self._result[ADVISORY_DELAY]) / 1000.0
+        if RANDOM in self._result:
+            self._random = self._result[RANDOM]
+        if SIGNATURE in self._result:
+            self._signature = self._result[SIGNATURE]
 
     def delay_request(self, requested_delay):
         elapsed = time.time() - self._time_of_last_request
@@ -149,7 +193,7 @@ class RandomJSONRPC:
             time.sleep(remaining_time)
 
     def check_errors(self):
-        if "error" in self._json_data:
+        if 'error' in self._json_data:
             error = self._json_data['error']
             code = error['code']
             message = error['message']
@@ -159,6 +203,10 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
 
     def send_request(self, request_string):
         '''Wraps outgoing JSON requests'''
+
+        # Wipe out any data from previous request
+        self._refresh()
+
         # Respect delay requests from the server
         if self._time_of_last_request == 0:
             self._time_of_last_request = time.time()
@@ -166,28 +214,18 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
             self.delay_request(self._advisory_delay)
 
         # Make the connection now
-        self._json_string = localrpc.http_request(JSON_URL, request_string)
-        # Use an ordered dict to preserve the integrity of signed data
-        self._json_data = json_to_ordered_dict(self._json_string)
-        self.check_errors()
-
-        # Parse out delays now
-        self._result = self._json_data['result']
-        if ADVISORY_DELAY in self._result:
-            self._advisory_delay = float(self._result[ADVISORY_DELAY]) / 1000.0
+        json_string = http_request(JSON_URL, request_string)
         self._time_of_last_request = time.time()
 
+        # Use an ordered dict to preserve the integrity of signed data
+        self._json_data = json_to_ordered_dict(json_string)
+        self.check_errors()
+        self._populate()
         return self
 
     def parse(self):
         '''Parses the received JSON data object and returns the random data'''
-        if not 'result' in self._json_data:
-            return None
-
-        random = []
-        if 'random' in self._json_data['result']:
-            random = self._json_data['result']['random']['data']
-        return random
+        return self._random['data']
 
 ####################### RANDOM.org API methods ##########################
 
@@ -232,9 +270,9 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
         request_string = compose_api_call(
             USAGE_METHOD, apiKey=self.api_key)
         self.send_request(request_string)
-        return self._json_string
+        return self._result
 
-####################### Dgitally signed API methods ##########################
+####################### Digitally-signed API methods ##########################
 
     def generate_signed_integers(self, n, min, max, replacement=True, base=10):
         request_string = compose_api_call(
@@ -279,17 +317,16 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
         """
         Verifies signed data with RANDOM.org.
         """
-        if not 'signature' in self._json_data['result']:
+        if not self._signature:
             return None
 
-        random = self._json_data['result']['random']
-        signature = self._json_data['result']['signature']
-
         json_string = compose_api_call(
-            VERIFY_SIGNATURE_METHOD, random=random, signature=signature)
+            VERIFY_SIGNATURE_METHOD, random=self._random,
+            signature=self._signature)
+
         self.send_request(json_string)
 
-        if 'authenticity' in self._json_data['result']:
-            return self._json_data['result']['authenticity']
+        if AUTHENTICITY in self._result:
+            return self._result[AUTHENTICITY]
         else:
             raise Exception("Unable to verify authenticity of signed data")
