@@ -76,6 +76,7 @@ FORMT_HEX = "hex"
 
 
 def valid_json_methods():
+    '''Returns a list of valid JSON-RPC method names from the RANDOM.org API'''
     return [INTEGER_METHOD, DECIMAL_METHOD, GAUSSIAN_METHOD, STRING_METHOD,
             UUID_METHOD, BLOB_METHOD, USAGE_METHOD, SIGNED_INTEGER_METHOD,
             SIGNED_BLOB_METHOD, SIGNED_DECIMAL_METHOD, SIGNED_GAUSSIAN_METHOD,
@@ -156,8 +157,8 @@ class RandomJSONRPC:
         Creates a client which can call RANDOM.org API functions to generate
         various kinds of random data.
 
-        The class is simple to use. Simply instantiate a RandomJSONRPC object
-        with a valid API key, and call the appropriate method on the server::
+        The class is simple to use: simply instantiate a RandomJSONRPC object
+        with a valid API key, and call the appropriate method on the server.
 
         For a list of available methods and parameters, see: 
 
@@ -193,6 +194,7 @@ class RandomJSONRPC:
             time.sleep(remaining_time)
 
     def check_errors(self):
+        '''Checks to see if the received JSON object has errors'''
         if 'error' in self._json_data:
             error = self._json_data['error']
             code = error['code']
@@ -230,12 +232,15 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
 ####################### RANDOM.org API methods ##########################
 
     def generate_integers(self, n, min, max, replacement=True, base=10):
+        '''Returns a list of true random integers with a user-defined range'''
         request_string = compose_api_call(
             INTEGER_METHOD, apiKey=self.api_key,
             n=n, min=min, max=max, replacement=replacement, base=base)
         return self.send_request(request_string).parse()
 
     def generate_decimal_fractions(self, n, decimal_places, replacement=True):
+        '''Returns a list of true random decimal fractions between [0,1]
+        with a user-defined number of decimal places'''
         request_string = compose_api_call(
             DECIMAL_METHOD, apiKey=self.api_key,
             n=n, decimalPlaces=decimal_places, replacement=replacement)
@@ -243,6 +248,7 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
 
     def generate_gaussians(self, n, mean, standard_deviation,
                            significant_digits):
+        '''Returns a list of true random numbers from a Gaussian distribution'''
         request_string = compose_api_call(
             GAUSSIAN_METHOD, apiKey=self.api_key,
             n=n, mean=mean,
@@ -251,22 +257,29 @@ See: https://api.random.org/json-rpc/1/error-codes""".format(code, message))
         return self.send_request(request_string).parse()
 
     def generate_strings(self, n, length, characters, replacement=True):
+        '''Returns a list of true random strings composed from a user-defined
+        set of characters'''
         request_string = compose_api_call(
             STRING_METHOD, apiKey=self.api_key,
             n=n, length=length, characters=characters, replacement=replacement)
         return self.send_request(request_string).parse()
 
     def generate_uuids(self, n):
+        '''Returns a list of true random UUIDs (version 4)'''
         request_string = compose_api_call(
             UUID_METHOD, apiKey=self.api_key, n=n)
         return self.send_request(request_string).parse()
 
     def generate_blobs(self, n, size, format=FORMAT_BASE64):
+        '''Returns a list of Binary Large OBjects (BLOBs) containing
+        true random data'''
         request_string = compose_api_call(
             BLOB_METHOD, apiKey=self.api_key, n=n, size=size, format=format)
         return self.send_request(request_string).parse()
 
     def get_usage(self):
+        '''Returns a dictionary of usage information for the client's
+        API key.'''
         request_string = compose_api_call(
             USAGE_METHOD, apiKey=self.api_key)
         self.send_request(request_string)
