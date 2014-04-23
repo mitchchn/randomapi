@@ -26,5 +26,5 @@ Example Usage
 
     # Returns a list of 5 true random numbers between 0 and 10
 
-    random_client = RandomJSONRPC(api_key) # Requires a valid API key from: api.random.org
+    random_client = RandomJSONRPC(api_key) # Requires a valid API key
     nums = random_client.generate_integers(n=5, min=0, max=10)
